@@ -7,6 +7,11 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
 
+def get_sublist(a, indicies):
+    """helper function to get a list"""
+    return [a[i] for i in indicies]
+
+
 
 class ModelSelector(object):
     '''
@@ -68,6 +73,12 @@ class SelectorBIC(ModelSelector):
     Bayesian information criteria: BIC = -2 * logL + p * logN
     """
 
+    def _score_bic(self, n_components, n_features, log_likelihood, n_points):
+        """ helper function to compute the bic score """
+        parameters = n_components ** 2 + 2*n_components*n_features-1
+
+        return -2* log_likelihood + parameters*math.log(n_points)
+
     def select(self):
         """ select the best model for self.this_word based on
         BIC score for n between self.min_n_components and self.max_n_components
@@ -77,7 +88,21 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+
+        best_bic = np.inf
+        best_model = None
+        for n_components in range( self.min_n_components, self.max_n_components+1):
+            model = self.base_model(n_components)
+            log_likelihood = model.score(self.X, self.lengths)
+            bic = self._score_bic(n_components, self.n_features, log_likelihood, len(self.lengths))
+
+            if bic<best_bic:
+                best_model = model
+
+        return best_model
+
+
+
 
 
 class SelectorDIC(ModelSelector):
@@ -98,12 +123,67 @@ class SelectorDIC(ModelSelector):
 
 
 class SelectorCV(ModelSelector):
-    ''' select best model based on average log Likelihood of cross-validation folds
+    """ select best model based on average log Likelihood of cross-validation folds
 
-    '''
+    """
+
+    def hmm_model(self,num_states, X, lengths ):
+        try:
+            model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(X, lengths)
+            if self.verbose:
+                print("model created for {} with {} states".format(self.this_word, num_states))
+            return model
+        except:
+            if self.verbose:
+                print("failure on {} with {} states".format(self.this_word, num_states))
+            return None
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        n_splits = min([len(self.sequences),5])
+
+        split_method = KFold(random_state=self.random_state, n_splits=n_splits)
+
+        best_score = -np.inf
+        best_model_n = None
+
+        for n_states in range(self.min_n_components, self.max_n_components+1):
+            scores = []
+            for train_idx, test_idx in split_method.split(self.sequences):
+
+                # create the data sets
+                X_train = combine_sequences(train_idx, self.sequences)
+                l_train = get_sublist(self.lengths,train_idx)
+
+                X_test = combine_sequences(test_idx, self.sequences)
+                l_test = get_sublist(self.lengths,test_idx)
+
+                # train
+                #model = self.hmm_model(n_states, X_train, l_train)
+                model = self.base_model(n_states)
+
+                if model is not None:
+                    score = model.score(X_test, l_test)
+                    scores.append(score)
+            if len(scores)>0:
+                score = np.mean(score)
+                if score>best_score:
+                    best_score = score
+                    best_model_n = n_states
+
+        if best_model_n is not None:
+            return self.hmm_model(best_model_n, self.X, self.lengths)
+
+
+
+
+
+
+
+
+
+
+
+

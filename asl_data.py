@@ -58,7 +58,7 @@ class AslDb(object):
         return WordsData(self, csvfilename, feature_list)
 
     def build_test(self, feature_method, csvfile=os.path.join('data', 'test_words.csv')):
-        """ wrapper creates sequence data objects for individual test word items suitable for hmmlearn library
+        """ wrapper creates seqcsvfilename =os.path.join('data', 'train_words.csv')uence data objects for individual test word items suitable for hmmlearn library
 
         :param feature_method: Feature function
         :param csvfile: str
