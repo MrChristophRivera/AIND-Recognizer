@@ -73,11 +73,22 @@ class SelectorBIC(ModelSelector):
     Bayesian information criteria: BIC = -2 * logL + p * logN
     """
 
-    def _score_bic(self, n_components, n_features, log_likelihood, n_points):
-        """ helper function to compute the bic score """
-        parameters = n_components ** 2 + 2*n_components*n_features-1
+    def __init__(self, all_word_sequences, all_word_Xlengths, this_word,
+                 n_constant=None, min_n_components=2, max_n_components=10, random_state=14, verbose=False):
+        ModelSelector.__init__(self, all_word_sequences, all_word_Xlengths, this_word, n_constant, min_n_components,
+                                max_n_components, random_state, verbose)
 
-        return -2* log_likelihood + parameters*math.log(n_points)
+        # set up attributes
+        self.scores = []
+        self.best_score = np.inf
+        self.best_model = None
+        self.n_features = len(self.words['ALL'][0][0])   #calculate the number of features from the words
+
+    def _score_bic(self, n_states, loglikelihood):
+        """ helper function to compute the bic score """
+        parameters = n_states ** 2 + 2*n_states*self.n_features-1
+
+        return -2* loglikelihood + parameters*math.log(len(self.lengths))
 
     def select(self):
         """ select the best model for self.this_word based on
@@ -87,19 +98,23 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
+        for n_states in range(self.min_n_components, self.max_n_components + 1):
 
-        best_bic = np.inf
-        best_model = None
-        for n_components in range( self.min_n_components, self.max_n_components+1):
-            model = self.base_model(n_components)
-            log_likelihood = model.score(self.X, self.lengths)
-            bic = self._score_bic(n_components, self.n_features, log_likelihood, len(self.lengths))
+            model = self.base_model(n_states)
 
-            if bic<best_bic:
-                best_model = model
+            if model is not None:
+                try:
+                    loglikelihood = model.score(self.X, self.lengths)
+                    score = self._score_bic(n_states, loglikelihood)
+                    self.scores.append(score)
+                except ValueError:
+                     pass
 
-        return best_model
+            if score < self.best_score:
+                self.best_score = score
+                self.best_model = model
+
+        return self.best_model
 
 
 
@@ -115,19 +130,72 @@ class SelectorDIC(ModelSelector):
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
 
+    def __init__(self, all_word_sequences, all_word_Xlengths, this_word,
+                 n_constant=None, min_n_components=2, max_n_components=10, random_state=14, verbose=False):
+        ModelSelector.__init__(self, all_word_sequences, all_word_Xlengths, this_word, n_constant, min_n_components,
+                               max_n_components, random_state, verbose)
+
+        # set up attributes
+        self.scores = []
+        self.best_score = np.inf
+        self.best_model = None
+
+    def _score_dic(self, model):
+        """ helper function to compute the DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))"""
+
+        words = self.hwords  # internal reference to the dict
+
+        # compute  log(P(X(i))
+        ll = model.score(self.X, self.lengths)
+
+        # compute 1/(M-1)SUM(log(P(X(all but i))
+        other_lls = np.mean([model.score(words[w][0], words[w][1]) for w in words if w != self.this_word])
+
+        # compute dic
+        return ll - other_lls
+
     def select(self):
+        """ select the best model for self.this_word based on DIC between models trained on max and min components
+
+        :return: GaussianHMM object
+        """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        for n_states in range(self.min_n_components, self.max_n_components + 1):
+
+            model = self.base_model(n_states)
+
+            if model is not None:
+                try:
+                    score = self._score_dic(model)
+                    self.scores.append(score)
+                except ValueError:
+                    pass
+
+            if score < self.best_score:
+                self.best_score = score
+                self.best_model = model
+
+        return self.best_model
 
 
 class SelectorCV(ModelSelector):
     """ select best model based on average log Likelihood of cross-validation folds
-
     """
 
-    def hmm_model(self,num_states, X, lengths ):
+    def __init__(self, all_word_sequences, all_word_Xlengths, this_word,
+                 n_constant=None, min_n_components=2, max_n_components=10, random_state=14, verbose=False):
+        ModelSelector.__init__(self, all_word_sequences, all_word_Xlengths, this_word, n_constant, min_n_components,
+                                max_n_components, random_state, verbose)
+
+        # set up attributes
+        self.mean_scores = []
+        self.std_scores = []
+        self.best_score = -np.inf
+        self.best_model = None
+
+    def hmm_model(self,num_states, X, lengths):
+        """ Runs the HMM model """
         try:
             model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
                                     random_state=self.random_state, verbose=False).fit(X, lengths)
@@ -142,39 +210,38 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+        # determine the number of CV iterations.
         n_splits = min([len(self.sequences),5])
 
+        # set up
         split_method = KFold(random_state=self.random_state, n_splits=n_splits)
-
-        best_score = -np.inf
-        best_model_n = None
 
         for n_states in range(self.min_n_components, self.max_n_components+1):
             scores = []
             for train_idx, test_idx in split_method.split(self.sequences):
 
-                # create the data sets
-                X_train = combine_sequences(train_idx, self.sequences)
-                l_train = get_sublist(self.lengths,train_idx)
-
-                X_test = combine_sequences(test_idx, self.sequences)
-                l_test = get_sublist(self.lengths,test_idx)
+                # partition the data into X_train and X_test
+                X_train, l_train = combine_sequences(train_idx, self.sequences)
+                X_test, l_test = combine_sequences(test_idx, self.sequences)
 
                 # train
-                #model = self.hmm_model(n_states, X_train, l_train)
-                model = self.base_model(n_states)
+                model = self.hmm_model(n_states, X_train, l_train)
 
                 if model is not None:
-                    score = model.score(X_test, l_test)
-                    scores.append(score)
+                    try:
+                        score = model.score(X_test, l_test)
+                        scores.append(score)
+                    except ValueError:
+                        pass
             if len(scores)>0:
-                score = np.mean(score)
-                if score>best_score:
-                    best_score = score
-                    best_model_n = n_states
+                score = np.mean(scores)
+                if score>self.best_score:
+                    self.best_score = score
+                    self.best_model = n_states
 
-        if best_model_n is not None:
-            return self.hmm_model(best_model_n, self.X, self.lengths)
+        # retrain the model on all the data.
+        if self.best_model is not None:
+            return self.hmm_model(self.best_model, self.X, self.lengths)
 
 
 
