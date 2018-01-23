@@ -7,10 +7,10 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
 
+
 def get_sublist(a, indicies):
     """helper function to get a list"""
     return [a[i] for i in indicies]
-
 
 
 class ModelSelector(object):
@@ -76,19 +76,32 @@ class SelectorBIC(ModelSelector):
     def __init__(self, all_word_sequences, all_word_Xlengths, this_word,
                  n_constant=None, min_n_components=2, max_n_components=10, random_state=14, verbose=False):
         ModelSelector.__init__(self, all_word_sequences, all_word_Xlengths, this_word, n_constant, min_n_components,
-                                max_n_components, random_state, verbose)
+                               max_n_components, random_state, verbose)
 
         # set up attributes
         self.scores = []
         self.best_score = np.inf
         self.best_model = None
-        self.n_features = len(self.words['ALL'][0][0])   #calculate the number of features from the words
+        self.n_features = len(self.words['ALL'][0][0])  # calculate the number of features from the words
 
-    def _score_bic(self, n_states, loglikelihood):
-        """ helper function to compute the bic score """
-        parameters = n_states ** 2 + 2*n_states*self.n_features-1
+    def _score_bic(self, n, logl):
+        """ helper function to compute the bic score
+        Bayesian information criteria: BIC = -2 * logL + p * log(d)
+        Where LogL is the logLikelihood computed by the model.
+        p is the number of parameters of the model
+            p = |transition_matrix free parameters| + |emmision parameters| + |init probs|  # degrees of freedom
+            p = n(n-1)  + nd +nd + n-1          (where d = number of features)
+            p = n^2 -n +2nd +n-1 = n^2 +2nd -1
+        N is the number of examples
+        Args:
+            n(int): number of states
+            logl(float): the log likelihood
 
-        return -2* loglikelihood + parameters*math.log(len(self.lengths))
+        """
+        d = len(self.lengths)
+        p = n ** 2 + 2 * n * d - 1  # the number of free parameters
+
+        return -2 * logl + p * math.log(d)
 
     def select(self):
         """ select the best model for self.this_word based on
@@ -108,16 +121,13 @@ class SelectorBIC(ModelSelector):
                     score = self._score_bic(n_states, loglikelihood)
                     self.scores.append(score)
                 except ValueError:
-                     pass
+                    pass
 
             if score < self.best_score:
                 self.best_score = score
                 self.best_model = model
 
         return self.best_model
-
-
-
 
 
 class SelectorDIC(ModelSelector):
@@ -186,19 +196,20 @@ class SelectorCV(ModelSelector):
     def __init__(self, all_word_sequences, all_word_Xlengths, this_word,
                  n_constant=None, min_n_components=2, max_n_components=10, random_state=14, verbose=False):
         ModelSelector.__init__(self, all_word_sequences, all_word_Xlengths, this_word, n_constant, min_n_components,
-                                max_n_components, random_state, verbose)
+                               max_n_components, random_state, verbose)
 
         # set up attributes
         self.mean_scores = []
         self.std_scores = []
+        self.model_sizes = []
         self.best_score = -np.inf
         self.best_model = None
 
-    def hmm_model(self,num_states, X, lengths):
+    def hmm_model(self, num_states, X, lengths):
         """ Runs the HMM model """
         try:
             model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
-                                    random_state=self.random_state, verbose=False).fit(X, lengths)
+                                random_state=self.random_state, verbose=False).fit(X, lengths)
             if self.verbose:
                 print("model created for {} with {} states".format(self.this_word, num_states))
             return model
@@ -211,12 +222,12 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # determine the number of CV iterations.
-        n_splits = min([len(self.sequences),5])
+        n_splits = min([len(self.sequences), 5])
 
         # set up
         split_method = KFold(random_state=self.random_state, n_splits=n_splits)
 
-        for n_states in range(self.min_n_components, self.max_n_components+1):
+        for n_states in range(self.min_n_components, self.max_n_components + 1):
             scores = []
             for train_idx, test_idx in split_method.split(self.sequences):
 
@@ -233,9 +244,16 @@ class SelectorCV(ModelSelector):
                         scores.append(score)
                     except ValueError:
                         pass
-            if len(scores)>0:
+
+            if len(scores) > 0:
                 score = np.mean(scores)
-                if score>self.best_score:
+
+                # stat for CV...
+                self.mean_scores.append(score)
+                self.std_scores.append(np.std(scores))
+                self.model_sizes.append(n_states)
+
+                if score > self.best_score:
                     self.best_score = score
                     self.best_model = n_states
 
@@ -243,14 +261,5 @@ class SelectorCV(ModelSelector):
         if self.best_model is not None:
             return self.hmm_model(self.best_model, self.X, self.lengths)
 
-
-
-
-
-
-
-
-
-
-
-
+        # if complete failure
+        return None
