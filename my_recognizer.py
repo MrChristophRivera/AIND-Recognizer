@@ -22,26 +22,28 @@ def recognize(models: dict, test_set: SinglesData):
     probabilities = []
     guesses = []
 
-    for i in range(0,len(test_set.get_all_Xlengths())):
-        X = test_set.get_item_sequences(i)
-        length = test_set.get_item_Xlengths(i)
+    for i in range(0,test_set.num_items):
+        X,length = test_set.get_item_Xlengths(i)
 
         probs = {}
 
         max_prob = -np.inf
-        max_word = None
+        max_word = ''
 
         for word, model in models.items():
-            print(model.score(X,length))
-            try:
-                prob = model.score(X, length)
-                probs[word] = prob
+            if model is not None:
+                try:
+                    prob = model.score(X, length)
+                    probs[word] = prob
 
-                if prob > max_prob:
-                    max_word = word
+                    if prob > max_prob:
+                        max_word = word
+                        max_prob = prob
 
-            except ValueError:
-                # if not work set default to zero log likelihood
+                except ValueError:
+                    # if not work set default to zero log likelihood
+                    probs[word] = -np.inf
+            else:
                 probs[word] = -np.inf
 
         probabilities.append(probs)

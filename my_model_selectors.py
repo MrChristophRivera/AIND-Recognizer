@@ -114,6 +114,7 @@ class SelectorBIC(ModelSelector):
         for n_states in range(self.min_n_components, self.max_n_components + 1):
 
             model = self.base_model(n_states)
+            score = np.inf
 
             if model is not None:
                 try:
@@ -174,6 +175,7 @@ class SelectorDIC(ModelSelector):
         for n_states in range(self.min_n_components, self.max_n_components + 1):
 
             model = self.base_model(n_states)
+            score = np.inf
 
             if model is not None:
                 try:
@@ -224,9 +226,10 @@ class SelectorCV(ModelSelector):
         # determine the number of CV iterations.
         n_splits = min([len(self.sequences), 5])
 
-        split_method = KFold(random_state=self.random_state, n_splits=n_splits)
 
         for n_states in range(self.min_n_components, self.max_n_components + 1):
+
+            score = -np.inf  # start a score
 
             # if only one example can not do cv # this is a bad model but oh well.
             if n_splits == 1:
@@ -236,9 +239,14 @@ class SelectorCV(ModelSelector):
                     try:
                         score = model.score(self.X, self.lengths)
 
+                        if score > self.best_score:
+                            self.best_score = score
+                            self.best_model = n_states
+
                     except ValueError:
                         pass
             else: # we can do CV.
+                split_method = KFold(random_state=self.random_state, n_splits=n_splits)
 
                 scores = []
                 for train_idx, test_idx in split_method.split(self.sequences):
@@ -266,9 +274,9 @@ class SelectorCV(ModelSelector):
                     self.std_scores.append(np.std(scores))
                     self.model_sizes.append(n_states)
 
-            if score > self.best_score:
-                self.best_score = score
-                self.best_model = n_states
+                if score > self.best_score:
+                    self.best_score = score
+                    self.best_model = n_states
 
         # retrain the model on all the data.
         if self.best_model is not None:
