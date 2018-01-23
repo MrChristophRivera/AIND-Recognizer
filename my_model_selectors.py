@@ -224,38 +224,51 @@ class SelectorCV(ModelSelector):
         # determine the number of CV iterations.
         n_splits = min([len(self.sequences), 5])
 
-        # set up
         split_method = KFold(random_state=self.random_state, n_splits=n_splits)
 
         for n_states in range(self.min_n_components, self.max_n_components + 1):
-            scores = []
-            for train_idx, test_idx in split_method.split(self.sequences):
 
-                # partition the data into X_train and X_test
-                X_train, l_train = combine_sequences(train_idx, self.sequences)
-                X_test, l_test = combine_sequences(test_idx, self.sequences)
-
-                # train
-                model = self.hmm_model(n_states, X_train, l_train)
+            # if only one example can not do cv # this is a bad model but oh well.
+            if n_splits == 1:
+                model =self.base_model(n_states)
 
                 if model is not None:
                     try:
-                        score = model.score(X_test, l_test)
-                        scores.append(score)
+                        score = model.score(self.X, self.lengths)
+
                     except ValueError:
                         pass
+            else: # we can do CV.
 
-            if len(scores) > 0:
-                score = np.mean(scores)
+                scores = []
+                for train_idx, test_idx in split_method.split(self.sequences):
 
-                # stat for CV...
-                self.mean_scores.append(score)
-                self.std_scores.append(np.std(scores))
-                self.model_sizes.append(n_states)
+                    # partition the data into X_train and X_test
+                    X_train, l_train = combine_sequences(train_idx, self.sequences)
+                    X_test, l_test = combine_sequences(test_idx, self.sequences)
 
-                if score > self.best_score:
-                    self.best_score = score
-                    self.best_model = n_states
+                    # train
+                    model = self.hmm_model(n_states, X_train, l_train)
+
+                    if model is not None:
+                        try:
+                            score = model.score(X_test, l_test)
+                            scores.append(score)
+
+                        except ValueError:
+                            pass
+
+                if len(scores) > 0:
+                    score = np.mean(scores)
+
+                    # stat for CV...
+                    self.mean_scores.append(score)
+                    self.std_scores.append(np.std(scores))
+                    self.model_sizes.append(n_states)
+
+            if score > self.best_score:
+                self.best_score = score
+                self.best_model = n_states
 
         # retrain the model on all the data.
         if self.best_model is not None:

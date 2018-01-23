@@ -1,5 +1,6 @@
 import warnings
 from asl_data import SinglesData
+import numpy as np
 
 
 def recognize(models: dict, test_set: SinglesData):
@@ -21,28 +22,29 @@ def recognize(models: dict, test_set: SinglesData):
     probabilities = []
     guesses = []
 
-    for i in range(len(test_set)):
+    for i in range(0,len(test_set.get_all_Xlengths())):
         X = test_set.get_item_sequences(i)
         length = test_set.get_item_Xlengths(i)
 
         probs = {}
 
-        max_prob = 0
+        max_prob = -np.inf
         max_word = None
 
-        for word in models:
+        for word, model in models.items():
+            print(model.score(X,length))
             try:
-                prob = models[word].score(X, length)
+                prob = model.score(X, length)
                 probs[word] = prob
 
                 if prob > max_prob:
                     max_word = word
 
             except ValueError:
-                # if not work set default to zero.
-                probs[word] = 0
+                # if not work set default to zero log likelihood
+                probs[word] = -np.inf
 
         probabilities.append(probs)
-        guesses.apend(max_word)
+        guesses.append(max_word)
 
     return probabilities, guesses
