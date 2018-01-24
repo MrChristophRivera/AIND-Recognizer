@@ -206,19 +206,6 @@ class SelectorCV(ModelSelector):
         self.best_score = -np.inf
         self.best_model = None
 
-    def hmm_model(self, num_states, X, lengths):
-        """ Runs the HMM model """
-        try:
-            model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
-                                random_state=self.random_state, verbose=False).fit(X, lengths)
-            if self.verbose:
-                print("model created for {} with {} states".format(self.this_word, num_states))
-            return model
-        except:
-            if self.verbose:
-                print("failure on {} with {} states".format(self.this_word, num_states))
-            return None
-
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -231,7 +218,7 @@ class SelectorCV(ModelSelector):
 
             # if only one example can not do cv # this is a bad model but oh well.
             if n_splits == 1:
-                model =self.base_model(n_states)
+                model = self.base_model(n_states)
 
                 if model is not None:
                     try:
@@ -250,11 +237,11 @@ class SelectorCV(ModelSelector):
                 for train_idx, test_idx in split_method.split(self.sequences):
 
                     # partition the data into X_train and X_test
-                    X_train, l_train = combine_sequences(train_idx, self.sequences)
+                    self.X, self.lengths = combine_sequences(train_idx, self.sequences)  # X tp train
                     X_test, l_test = combine_sequences(test_idx, self.sequences)
 
                     # train
-                    model = self.hmm_model(n_states, X_train, l_train)
+                    model = self.base_model(n_states)
 
                     if model is not None:
                         try:
