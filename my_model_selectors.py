@@ -84,24 +84,23 @@ class SelectorBIC(ModelSelector):
         self.best_model = None
         self.n_features = len(self.words['ALL'][0][0])  # calculate the number of features from the words
 
-    def _score_bic(self, n, logl):
+    def _score_bic(self, m, logL):
         """ helper function to compute the bic score
         Bayesian information criteria: BIC = -2 * logL + p * log(d)
         Where LogL is the logLikelihood computed by the model.
         p is the number of parameters of the model
             p = |transition_matrix free parameters| + |emmision parameters| + |init probs|  # degrees of freedom
-            p = n(n-1)  + nd +nd + n-1          (where d = number of features)
-            p = n^2 -n +2nd +n-1 = n^2 +2nd -1
+            p = m(m-1)  + mf +mf + m-1          (where d = number of features)
+            p = m^2 +2*mf -1
         N is the number of examples
         Args:
-            n(int): number of states
-            logl(float): the log likelihood
+            m(int): number of states
+            logL:(float): the log likelihood
 
         """
-        d = len(self.lengths)
-        p = n ** 2 + 2 * n * d - 1  # the number of free parameters
-
-        return -2 * logl + p * math.log(d)
+        N, f = self.X.shape
+        p = m ** 2 + 2 * m * f - 1  # the number of free parameters
+        return -2 * logL + p * math.log(N)
 
     def select(self):
         """ select the best model for self.this_word based on
@@ -148,7 +147,7 @@ class SelectorDIC(ModelSelector):
 
         # set up attributes
         self.scores = []
-        self.best_score = np.inf
+        self.best_score = -np.inf
         self.best_model = None
 
     def _score_dic(self, model):
@@ -184,7 +183,7 @@ class SelectorDIC(ModelSelector):
                 except ValueError:
                     pass
 
-            if score < self.best_score:
+            if score > self.best_score:
                 self.best_score = score
                 self.best_model = model
 
@@ -225,7 +224,6 @@ class SelectorCV(ModelSelector):
 
         # determine the number of CV iterations.
         n_splits = min([len(self.sequences), 5])
-
 
         for n_states in range(self.min_n_components, self.max_n_components + 1):
 
