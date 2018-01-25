@@ -230,7 +230,7 @@ class SelectorCV(ModelSelector):
 
                     except ValueError:
                         pass
-            else: # we can do CV.
+            else:  # we can do CV.
                 split_method = KFold(random_state=self.random_state, n_splits=n_splits)
 
                 scores = []
@@ -265,7 +265,8 @@ class SelectorCV(ModelSelector):
 
         # retrain the model on all the data.
         if self.best_model is not None:
-            return self.hmm_model(self.best_model, self.X, self.lengths)
+            self.X, self.lengths = combine_sequences(range(len(self.sequences)), self.sequences)
+            return self.base_model(self.best_model)
 
         # if complete failure
         return None
